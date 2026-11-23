@@ -9,11 +9,11 @@ stations:
   jazzcafe:      { name: "Jazz Cafe",           url: "http://radio.wanderingsheep.tv:8000/jazzcafe" }
   smoothjazz101: { name: "101 Smooth Jazz",     url: "http://jking.cdnstream1.com/b22139_128mp3" }
   groovesalad:   { name: "SomaFM Groove Salad", url: "https://ice2.somafm.com/groovesalad-128-mp3" }
-  midnightcafe:  { name: "Midnight Cafe Radio", url: "http://vh11367x.out.airtime.pro:8000/vh11367x_a" }
+  jazzgroove:    { name: "The Jazz Groove",     url: "http://east-mp3-128.streamthejazzgroove.com/stream" }
   chilltrax:     { name: "Chilltrax",           url: "https://streamssl.chilltrax.com/stream" }
 
 # Preset-Tasten 1–6
-presets: [swr3, jazzcafe, smoothjazz101, groovesalad, midnightcafe, chilltrax]
+presets: [swr3, jazzcafe, smoothjazz101, groovesalad, jazzgroove, chilltrax]
 
 # Welche Boxen angefasst werden. `strb discover` zeigt deviceID und IP.
 speakers:

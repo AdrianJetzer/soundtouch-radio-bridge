@@ -6,7 +6,32 @@ Erweckt die **Preset-Tasten 1–6** von Bose-SoundTouch-Lautsprechern wieder zum
 
 > *Revives the preset buttons of Bose SoundTouch speakers after the 2026 cloud shutdown – a small, dependency-free Go service for your home network.*
 
-**Status:** in Planung. Siehe die [Spezifikation](docs/SPEC.md).
+**Status:** M1 fertig. Läuft am Referenzgerät, einem SoundTouch-10-Stereo-Paar mit Firmware 27.0.6. Siehe die [Spezifikation](docs/SPEC.md) und die [Befunde am Gerät](docs/M0-FINDINGS.md).
+
+## Schnellstart
+
+Voraussetzung ist Go 1.23 oder neuer. Fertige Programmdateien gibt es noch nicht.
+
+```bash
+go build -o strb ./cmd/strb
+./strb discover                      # Boxen finden, deviceID notieren
+cp strb.example.yaml strb.yaml       # Sender und Box eintragen
+./strb run                           # läuft, bis Ctrl+C
+```
+
+Danach spielen die Preset-Tasten 1–6 der Box die Sender aus `strb.yaml`. Änderungen an der Datei übernimmt `strb` ohne Neustart. Die bisherigen Presets der Box werden vorher in `backups/` gesichert, und `strb restore <datei>` spielt sie zurück.
+
+| Befehl | Zweck |
+|---|---|
+| `strb run` | Normalbetrieb |
+| `strb discover` | Boxen im Netz anzeigen, inklusive Stereo-Paar-Rolle |
+| `strb presets [box]` | gespeicherte Presets anzeigen |
+| `strb sync` | Presets einmalig umschreiben |
+| `strb play <box> <taste\|sender>` | Sender testweise abspielen |
+| `strb restore <datei> [box]` | gesicherte Presets zurückspielen |
+| `strb listen <box>` | rohe Meldungen der Box (Diagnose) |
+
+**Wichtig:** `strb` muss laufen, damit die Tasten funktionieren. Wenn der Rechner schläft, passiert beim Tastendruck nichts.
 
 ## Wie es funktioniert
 

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **v0.3** – M0 abgeschlossen, Ansatz am Gerät bestätigt ([Befunde](M0-FINDINGS.md)) |
+| Status | **v0.4** – M1 abgeschlossen: alle 6 Tasten funktionieren am Referenzgerät ([M0-Befunde](M0-FINDINGS.md)) |
 | Datum | 2026-11-23 |
 | Name | `soundtouch-radio-bridge`, Befehl `strb` |
 | Sprache / Stack | Go |
@@ -56,7 +56,7 @@ Auf beiden Geräten geprüft:
 
 ### 2.3 Start-Belegung der Presets
 
-Übernommen aus der bisherigen Belegung über Home Assistant und Music Assistant. Taste 3 hat einen Ersatz bekommen, weil der Sender bei TuneIn nicht mehr streamt. Die Belegung lässt sich jederzeit in der Konfiguration ändern.
+Übernommen aus der bisherigen Belegung über Home Assistant und Music Assistant. Taste 3 und 5 haben Ersatz bekommen: Capital Jazz Lounge streamt bei TuneIn nicht mehr, Midnight Cafe Radio sendet nur Stille. Die Belegung lässt sich jederzeit in der Konfiguration ändern.
 
 | # | Sender | Stream-URL (geprüft am 2026-11-23) |
 |---|---|---|
@@ -64,7 +64,7 @@ Auf beiden Geräten geprüft:
 | 2 | Jazz Cafe | `http://radio.wanderingsheep.tv:8000/jazzcafe` |
 | 3 | 101 Smooth Jazz | `http://jking.cdnstream1.com/b22139_128mp3` |
 | 4 | SomaFM Groove Salad | `https://ice2.somafm.com/groovesalad-128-mp3` |
-| 5 | Midnight Cafe Radio | `http://vh11367x.out.airtime.pro:8000/vh11367x_a` |
+| 5 | The Jazz Groove | `http://east-mp3-128.streamthejazzgroove.com/stream` |
 | 6 | Chilltrax | `https://streamssl.chilltrax.com/stream` |
 
 Alle sechs liefern `audio/mpeg`. Drei davon laufen über HTTPS, das die Box selbst nicht abspielen kann. Deshalb braucht es den Proxy aus Abschnitt 5.4.
@@ -119,11 +119,11 @@ stations:
   jazzcafe:      { name: "Jazz Cafe",           url: "http://radio.wanderingsheep.tv:8000/jazzcafe" }
   smoothjazz101: { name: "101 Smooth Jazz",     url: "http://jking.cdnstream1.com/b22139_128mp3" }
   groovesalad:   { name: "SomaFM Groove Salad", url: "https://ice2.somafm.com/groovesalad-128-mp3" }
-  midnightcafe:  { name: "Midnight Cafe Radio", url: "http://vh11367x.out.airtime.pro:8000/vh11367x_a" }
+  jazzgroove:    { name: "The Jazz Groove",     url: "http://east-mp3-128.streamthejazzgroove.com/stream" }
   chilltrax:     { name: "Chilltrax",           url: "https://streamssl.chilltrax.com/stream" }
 
 # Standard-Belegung für alle Boxen (Taste 1–6)
-presets: [swr3, jazzcafe, smoothjazz101, groovesalad, midnightcafe, chilltrax]
+presets: [swr3, jazzcafe, smoothjazz101, groovesalad, jazzgroove, chilltrax]
 
 # Boxen: leer = automatisch finden. Optional fest per IP; abweichende Presets pro Box möglich.
 speakers:
@@ -291,7 +291,7 @@ Daran sind die bestehenden Lösungen bei dir gescheitert. Jede Regel hat einen T
 | | Inhalt | Ergebnis |
 |---|---|---|
 | **M0 Spike** ✅ | Am SoundTouch 10 klären, was die Box beim Druck meldet und ob sie den Link selbst spielt. Meldungen aufzeichnen. | Erledigt am 2026-11-23, siehe [M0-FINDINGS.md](M0-FINDINGS.md) |
-| **M1 MVP** | Konfiguration (mit Übernahme im laufenden Betrieb), Sync mit Backup, Listener, Player, Proxy (http/https), CLI `run`/`discover`/`play`/`sync`/`restore` | Tasten funktionieren am Mac (SoundTouch 10) |
+| **M1 MVP** ✅ | Konfiguration (mit Übernahme im laufenden Betrieb), Sync mit Backup, Listener, Player, Proxy (http/https), CLI `run`/`discover`/`play`/`sync`/`restore` | Erledigt am 2026-11-23: alle 6 Tasten starten ihren Sender in ca. 0,9 s, Konfigurationsänderung ohne Neustart getestet |
 | **M2 Robust** | Supervisor, Z1–Z9 vollständig, simulierte Box mit Tests, 24-h-Test | „Läuft einfach“ |
 | **M3 Komfort** | Autostart Mac/Windows, Windows-Build getestet, Docker | Dauerbetrieb |
 | später | HLS/ffmpeg, kleine Web-Oberfläche, HA/MQTT, Cloud-Emulation für volle Anzeige | – |
