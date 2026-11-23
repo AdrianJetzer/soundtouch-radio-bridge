@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/coder/websocket"
@@ -19,13 +20,24 @@ import (
 
 func main() {
 	if len(os.Args) < 3 {
-		fmt.Fprintln(os.Stderr, "usage: spike listen|backup <ip> [-for 10m]")
+		fmt.Fprintln(os.Stderr, `usage:
+  spike listen <ip> [-for 10m]
+  spike backup <ip>
+  spike serve  <upstream-url> [-addr :8686]
+  spike store  <ip> <slot> <location> <name>
+  spike play   <ip> <uri> <title>`)
 		os.Exit(2)
 	}
 	cmd, ip := os.Args[1], os.Args[2]
 	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
 	dur := fs.Duration("for", 10*time.Minute, "how long to listen")
-	_ = fs.Parse(os.Args[3:])
+	addr := fs.String("addr", ":8686", "listen address for serve")
+	rest := os.Args[3:]
+	var pos []string
+	for len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
+		pos, rest = append(pos, rest[0]), rest[1:]
+	}
+	_ = fs.Parse(rest)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
@@ -41,6 +53,20 @@ func main() {
 		}
 	case "backup":
 		err = backup(ctx, ip)
+	case "serve":
+		err = serve(ctx, *addr, ip) // ip holds the upstream URL here
+	case "store":
+		if len(pos) != 3 {
+			err = fmt.Errorf("store needs <slot> <location> <name>")
+			break
+		}
+		err = storePreset(ctx, ip, pos[0], pos[1], pos[2])
+	case "play":
+		if len(pos) != 2 {
+			err = fmt.Errorf("play needs <uri> <title>")
+			break
+		}
+		err = upnpPlay(ctx, ip, pos[0], pos[1])
 	default:
 		err = fmt.Errorf("unknown command %q", cmd)
 	}

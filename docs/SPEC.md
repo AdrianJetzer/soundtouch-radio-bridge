@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **v0.2** – abgestimmt, Grundlage für M0 |
+| Status | **v0.3** – M0 abgeschlossen, Ansatz am Gerät bestätigt ([Befunde](M0-FINDINGS.md)) |
 | Datum | 2026-11-23 |
 | Name | `soundtouch-radio-bridge`, Befehl `strb` |
 | Sprache / Stack | Go |
@@ -44,7 +44,7 @@ Taste drücken → festgelegter Internet-Radiosender spielt. Ohne Bose-Cloud, oh
 
 | Modell | Firmware | Im Umfang |
 |---|---|---|
-| SoundTouch 10 | 27.0.6.46330 | **ja**, Referenzgerät für M0–M2 |
+| 2× SoundTouch 10 als Stereo-Paar (Bose Stereo Link, „Links“ = Master) | 27.0.6.46330 | **ja**, Referenzgerät für M0–M2 |
 | Cinemate (SoundTouch-Modul, variant „lisa“) | 27.0.6.46330 | vorerst nicht (Modell wird aber nicht ausgeschlossen) |
 
 > Geräte-IDs, IPs und Seriennummern stehen bewusst **nicht** im Repo. Sie gehören in die lokale `strb.yaml` (in `.gitignore`).
@@ -99,7 +99,7 @@ Ansatz „Mithören und Abspielen“. So arbeiten auch die bestehenden Projekte 
 4. **Die Box holt den Stream** beim eingebauten Proxy, und zwar immer über einfaches `http://`.
 5. **Der Proxy holt den echten Sender** (auch `https`, folgt Redirects) und reicht die Bytes 1:1 durch.
 
-> **Annahme, die der Spike (M0) klärt:** Möglicherweise spielt die Box ein `UPNP`-Preset mit HTTP-Link beim Tastendruck schon **selbst** ab. Dann wäre Schritt 3 nur ein Sicherheitsnetz. Beide Wege führen zum selben Proxy-Link, sie schaden sich also nicht. Der Proxy muss aber mehrere gleichzeitige Anfragen derselben Box sauber behandeln (siehe 5.4).
+> **In M0 geklärt:** Die Box spielt ein `UPNP`-Preset beim Tastendruck **nicht** selbst ab. Sie meldet nur den Druck und danach Fehler 1036 (`UpnpRcvdContentItemInWrongState`). Schritt 3 ist also Pflicht. Das Umschreiben der Presets (Schritt 1) bleibt trotzdem sinnvoll: Die Box zeigt den Namen an, die Meldung kommt sauber mit unserem Link, und die Box versucht nicht mehr, TuneIn zu erreichen.
 
 ---
 
@@ -169,6 +169,9 @@ Abhängigkeiten so wenig wie möglich: ein WebSocket-Paket (`github.com/coder/we
 ### 5.2 Event-Listener (je Box)
 - `ws://<ip>:8080`, Subprotokoll `gabbo`.
 - Auswertung: `<nowSelectionUpdated>` → erstes `<preset id="N">` mit N in 1–6 → Ereignis „Preset N“.
+  - `preset id="0"` kommt bei der Power-Taste und wird ignoriert.
+  - Das Ereignis kommt unabhängig davon, was im Preset steht (TuneIn oder UPNP). Damit funktioniert die Taste auch, wenn das Umschreiben noch nicht geklappt hat.
+- `errorUpdate` und `groupUpdated` werden ausgewertet und geloggt (siehe 5.6).
 - Alle anderen Meldungen werden ignoriert, aber im Debug-Log protokolliert.
 - Robust parsen: Ungültiges XML wird geloggt und verworfen, es bringt das Programm nie zum Absturz.
 - **Entprellen:** Dasselbe Preset innerhalb von 1,5 s gilt als **ein** Druck.
@@ -202,6 +205,12 @@ Abhängigkeiten so wenig wie möglich: ein WebSocket-Paket (`github.com/coder/we
 - **Vor dem ersten Überschreiben** werden die aktuellen Presets jeder Box als XML in `backups/<deviceID>-<zeitstempel>.xml` gesichert. Mit `strb restore` lassen sie sich zurückspielen.
 - Abgleich beim Start, bei `presetsUpdated` von der Box und alle 30 Minuten. Geschrieben wird nur, was abweicht, danach wird nachgeprüft (`GET /presets`).
 - Ändert sich `public_url` (z.B. weil der Mac eine neue IP hat), werden alle Presets automatisch neu geschrieben.
+
+### 5.6 Stereo-Paar (Bose Stereo Link)
+- Ein Paar erscheint als zwei Geräte mit gemeinsamer Gruppe (`GET :8090/getGroup`, Meldung `groupUpdated`). Der **Master** (Rolle `LEFT`, `masterDeviceId`) meldet die Tastendrücke und nimmt die UPnP-Befehle an. Die zweite Box spielt automatisch mit.
+- `strb` steuert nur den Master. Die zweite Box wird erkannt und im Log genannt, aber nicht angefasst. Ihre Presets werden nicht umgeschrieben.
+- Ein Paar ist nur funktionsfähig, wenn beide Boxen im Netz sind. Bei `GROUP_ERROR` loggt `strb` eine Warnung, z.B. „Paar Links+Rechts: rechte Box nicht erreichbar, Tasten funktionieren erst wieder, wenn sie zurück ist“. Sobald `GROUP_OK` kommt, folgt eine Entwarnung.
+- Gruppen-Meldungen können veraltete IPs enthalten. Sie werden nie zur Adressierung verwendet.
 
 ---
 
@@ -237,6 +246,7 @@ Daran sind die bestehenden Lösungen bei dir gescheitert. Jede Regel hat einen T
 | Z7 | Ein Fehler eines Senders oder ungültiges XML bringen alles zum Absturz | Fehler bleiben auf diese Box und dieses Ereignis begrenzt. Auch eine Panic wird im Supervisor abgefangen. |
 | Z8 | Presets der Box „verlieren“ sich (bekannt aus der Firmware) | Regelmäßiger Abgleich (5.5). |
 | Z9 | Der Rechner hat eine neue IP | Presets werden automatisch neu geschrieben (5.5). Empfehlung: im Router eine feste IP für den Rechner reservieren. |
+| Z10 | Ein Stereo-Paar ist halb offline, und die Tasten tun „einfach nichts“, ohne dass man erfährt, warum | Gruppenstatus überwachen und klar loggen (5.6). Die Box setzt den WebSocket zurück, wenn das Paar sich neu bildet → Neuverbinden (Z1). |
 
 **Wichtig zum Betrieb:** `strb` muss laufen, damit die Tasten funktionieren. Wenn der Mac schläft, passiert beim Tastendruck nichts. Für den Dauerbetrieb bietet sich ein Gerät an, das immer läuft: dein Home-Assistant-Rechner, ein Raspberry Pi oder ein NAS. Das Go-Programm läuft dort genauso.
 
@@ -280,7 +290,7 @@ Daran sind die bestehenden Lösungen bei dir gescheitert. Jede Regel hat einen T
 
 | | Inhalt | Ergebnis |
 |---|---|---|
-| **M0 Spike** | Am SoundTouch 10 klären: Was meldet die Box heute beim Druck (TuneIn-Preset)? Kommt nach dem Umschreiben auf `UPNP` beim Druck `nowSelectionUpdated`? Spielt die Box den Link vielleicht schon selbst? Echte Meldungen aufzeichnen. | Fakten statt Annahmen, Spec wird angepasst |
+| **M0 Spike** ✅ | Am SoundTouch 10 klären, was die Box beim Druck meldet und ob sie den Link selbst spielt. Meldungen aufzeichnen. | Erledigt am 2026-11-23, siehe [M0-FINDINGS.md](M0-FINDINGS.md) |
 | **M1 MVP** | Konfiguration (mit Übernahme im laufenden Betrieb), Sync mit Backup, Listener, Player, Proxy (http/https), CLI `run`/`discover`/`play`/`sync`/`restore` | Tasten funktionieren am Mac (SoundTouch 10) |
 | **M2 Robust** | Supervisor, Z1–Z9 vollständig, simulierte Box mit Tests, 24-h-Test | „Läuft einfach“ |
 | **M3 Komfort** | Autostart Mac/Windows, Windows-Build getestet, Docker | Dauerbetrieb |
@@ -292,7 +302,8 @@ Daran sind die bestehenden Lösungen bei dir gescheitert. Jede Regel hat einen T
 
 | Risiko | Gegenmaßnahme |
 |---|---|
-| Die Box meldet den Druck bei `UPNP`-Presets anders als erwartet | M0 klärt das vorab. Alternativ werten wir `nowPlayingUpdated` aus. |
+| Die Box meldet den Druck bei `UPNP`-Presets anders als erwartet | ✅ In M0 geklärt: Sie meldet ihn wie erwartet. |
+| Anzeige zeigt „Track“ statt Radio und kein Logo | Kosmetisch. In M1 mit DIDL und `protocolInfo` experimentieren. |
 | Die Cinemate verhält sich anders als die ST10 | Wird in M0 an beiden Geräten getestet |
 | Ein Sender ändert seine URL | Klare Fehlermeldung im Log, die URL wird in der Konfiguration angepasst |
 | Eine Firmware-Eigenheit blockiert Port 8686 oder verlangt einen bestimmten Content-Type | M0, außerdem lässt sich der Content-Type im Proxy erzwingen |
