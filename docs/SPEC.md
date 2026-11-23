@@ -292,7 +292,7 @@ Daran sind die bestehenden Lösungen bei dir gescheitert. Jede Regel hat einen T
 |---|---|---|
 | **M0 Spike** ✅ | Am SoundTouch 10 klären, was die Box beim Druck meldet und ob sie den Link selbst spielt. Meldungen aufzeichnen. | Erledigt am 2026-11-23, siehe [M0-FINDINGS.md](M0-FINDINGS.md) |
 | **M1 MVP** ✅ | Konfiguration (mit Übernahme im laufenden Betrieb), Sync mit Backup, Listener, Player, Proxy (http/https), CLI `run`/`discover`/`play`/`sync`/`restore` | Erledigt am 2026-11-23: alle 6 Tasten starten ihren Sender in ca. 0,9 s, Konfigurationsänderung ohne Neustart getestet |
-| **M2 Robust** | Supervisor, Z1–Z9 vollständig, simulierte Box mit Tests, 24-h-Test | „Läuft einfach“ |
+| **M2 Robust** 🟡 | Supervisor, Z1–Z10 vollständig, simulierte Box mit Tests, 24-h-Test | Automatischer Teil erledigt am 2026-11-23: `internal/fakespeaker`, 20 Szenario-Tests (Z1–Z10), `GET /status`. **Offen:** Abnahme an der echten Box (Stecker ziehen, Stereo-Paar trennen) und 24-h-Lauf |
 | **M3 Komfort** | Autostart Mac/Windows, Windows-Build getestet, Docker | Dauerbetrieb |
 | später | HLS/ffmpeg, kleine Web-Oberfläche, HA/MQTT, Cloud-Emulation für volle Anzeige | – |
 
