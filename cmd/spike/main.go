@@ -33,9 +33,12 @@ func main() {
 	var err error
 	switch cmd {
 	case "listen":
-		ctx, cancel := context.WithTimeout(ctx, *dur)
+		lctx, cancel := context.WithTimeout(ctx, *dur)
 		defer cancel()
-		err = listen(ctx, ip)
+		err = listen(lctx, ip)
+		if lctx.Err() != nil {
+			err = nil // time is up or Ctrl+C: normal end
+		}
 	case "backup":
 		err = backup(ctx, ip)
 	default:

@@ -56,16 +56,16 @@ Auf beiden Geräten geprüft:
 
 ### 2.3 Start-Belegung der Presets
 
-Übernommen von den bisherigen TuneIn-Presets. Die Belegung lässt sich jederzeit in der Konfiguration ändern.
+Übernommen aus der bisherigen Belegung über Home Assistant und Music Assistant. Taste 3 hat einen Ersatz bekommen, weil der Sender bei TuneIn nicht mehr streamt. Die Belegung lässt sich jederzeit in der Konfiguration ändern.
 
 | # | Sender | Stream-URL (geprüft am 2026-11-23) |
 |---|---|---|
-| 1 | Radio Regenbogen – Soft & Lazy | `https://stream.regenbogen.de/softlazy/mp3-128/radiobrowser` |
-| 2 | Lounge FM | `https://cast.mediaonline.net.ua/loungefm320` |
-| 3 | SwissGroove | `http://relay1.swissgroove.ch/stream` |
-| 4 | 1.FM Chillout Lounge | `http://strm112.1.fm/chilloutlounge_mobile_mp3` |
-| 5 | Jazz Cafe | `http://radio.wanderingsheep.tv:8000/jazzcafe` |
-| 6 | SWR3 | `https://liveradio.swr.de/sw282p3/swr3/play.mp3` |
+| 1 | SWR3 | `https://liveradio.swr.de/sw282p3/swr3/play.mp3` |
+| 2 | Jazz Cafe | `http://radio.wanderingsheep.tv:8000/jazzcafe` |
+| 3 | 101 Smooth Jazz | `http://jking.cdnstream1.com/b22139_128mp3` |
+| 4 | SomaFM Groove Salad | `https://ice2.somafm.com/groovesalad-128-mp3` |
+| 5 | Midnight Cafe Radio | `http://vh11367x.out.airtime.pro:8000/vh11367x_a` |
+| 6 | Chilltrax | `https://streamssl.chilltrax.com/stream` |
 
 Alle sechs liefern `audio/mpeg`. Drei davon laufen über HTTPS, das die Box selbst nicht abspielen kann. Deshalb braucht es den Proxy aus Abschnitt 5.4.
 
@@ -115,15 +115,15 @@ listen: ":8686"
 public_url: ""            # z.B. "http://192.168.1.10:8686"
 
 stations:
-  regenbogen: { name: "Radio Regenbogen Soft & Lazy", url: "https://stream.regenbogen.de/softlazy/mp3-128/radiobrowser" }
-  loungefm:   { name: "Lounge FM",              url: "https://cast.mediaonline.net.ua/loungefm320" }
-  swissgroove:{ name: "SwissGroove",            url: "http://relay1.swissgroove.ch/stream" }
-  chillout:   { name: "1.FM Chillout Lounge",   url: "http://strm112.1.fm/chilloutlounge_mobile_mp3" }
-  jazzcafe:   { name: "Jazz Cafe",              url: "http://radio.wanderingsheep.tv:8000/jazzcafe" }
-  swr3:       { name: "SWR3",                   url: "https://liveradio.swr.de/sw282p3/swr3/play.mp3", logo: "" }
+  swr3:          { name: "SWR3",                url: "https://liveradio.swr.de/sw282p3/swr3/play.mp3", logo: "" }
+  jazzcafe:      { name: "Jazz Cafe",           url: "http://radio.wanderingsheep.tv:8000/jazzcafe" }
+  smoothjazz101: { name: "101 Smooth Jazz",     url: "http://jking.cdnstream1.com/b22139_128mp3" }
+  groovesalad:   { name: "SomaFM Groove Salad", url: "https://ice2.somafm.com/groovesalad-128-mp3" }
+  midnightcafe:  { name: "Midnight Cafe Radio", url: "http://vh11367x.out.airtime.pro:8000/vh11367x_a" }
+  chilltrax:     { name: "Chilltrax",           url: "https://streamssl.chilltrax.com/stream" }
 
-# Standard-Belegung für alle Boxen
-presets: [regenbogen, loungefm, swissgroove, chillout, jazzcafe, swr3]
+# Standard-Belegung für alle Boxen (Taste 1–6)
+presets: [swr3, jazzcafe, smoothjazz101, groovesalad, midnightcafe, chilltrax]
 
 # Boxen: leer = automatisch finden. Optional fest per IP; abweichende Presets pro Box möglich.
 speakers:
@@ -182,6 +182,7 @@ Abhängigkeiten so wenig wie möglich: ein WebSocket-Paket (`github.com/coder/we
 ### 5.4 Stream-Proxy
 - Endpunkt: `GET /stream/<deviceID>/<slot>` (auch `HEAD`). Ein zweiter Endpunkt `GET /station/<key>` dient zum Testen.
 - Holt den Sender per `http` oder `https`, folgt Redirects (höchstens 5), setzt einen neutralen User-Agent.
+- Leitet **keinen `Range`-Header** an den Sender weiter. SomaFM antwortet darauf zum Beispiel mit `403` (beobachtet am 2026-11-23).
 - Reicht `Content-Type` und ICY-Header (`icy-name`, `icy-br`, `icy-genre`, `icy-metaint`) durch. `Icy-MetaData` wird nur angefordert, wenn die Box danach fragt.
 - Die Daten werden **ohne Umwandlung gestreamt**, also mit kleinem Puffer statt die ganze Datei zwischenzuspeichern. Bricht der Sender ab, endet auch die Antwort an die Box.
 - Nur eine aktive Verbindung pro Box: Kommt eine neue Anfrage derselben Box, wird die alte Upstream-Verbindung geschlossen.
@@ -301,7 +302,7 @@ Daran sind die bestehenden Lösungen bei dir gescheitert. Jede Regel hat einen T
 
 ## 12. Entscheidungen (2026-11-23)
 
-1. **Sender:** Wir starten mit den 6 bisherigen Sendern (2.3). Ändern geht jederzeit über die Konfiguration, ohne Neustart.
+1. **Sender:** Wir starten mit der bisherigen HA-Belegung (2.3), auf Taste 3 mit 101 Smooth Jazz als Ersatz. Ändern geht jederzeit über die Konfiguration, ohne Neustart.
 2. **Cinemate:** vorerst nicht im Umfang. Es wird nur der SoundTouch 10 angefasst.
 3. **Betriebsort:** zuerst auf dem Mac, Dauerbetrieb später (M3).
 4. **Name:** `soundtouch-radio-bridge`, Befehl `strb`.
