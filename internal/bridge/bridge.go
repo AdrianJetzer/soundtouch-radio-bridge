@@ -5,12 +5,14 @@ package bridge
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,6 +20,7 @@ import (
 
 	"github.com/AdrianJetzer/soundtouch-radio-bridge/internal/config"
 	"github.com/AdrianJetzer/soundtouch-radio-bridge/internal/discovery"
+	"github.com/AdrianJetzer/soundtouch-radio-bridge/internal/events"
 	"github.com/AdrianJetzer/soundtouch-radio-bridge/internal/proxy"
 	"github.com/AdrianJetzer/soundtouch-radio-bridge/internal/speaker"
 )
@@ -34,6 +37,15 @@ type Bridge struct {
 
 	// Search finds speakers; defaults to SSDP discovery. Replaceable in tests.
 	Search func(ctx context.Context) []discovery.Found
+	// PortsFor maps a speaker address to its service ports; nil means the
+	// standard SoundTouch ports. Tests point this at simulated speakers.
+	PortsFor func(host string) Ports
+	// TuneListener adjusts the WebSocket listener timings (tests).
+	TuneListener func(*events.Listener)
+	// APITimeout bounds calls to a speaker's Web API (default 6 s).
+	APITimeout time.Duration
+
+	addr atomic.Value // actual listen address once Run has started
 
 	cfg   atomic.Pointer[config.Config]
 	proxy *proxy.Proxy
@@ -56,8 +68,75 @@ func New(cfg *config.Config, log *slog.Logger, version string) *Bridge {
 // Config returns the active configuration.
 func (b *Bridge) Config() *config.Config { return b.cfg.Load() }
 
-// Handler is the HTTP handler the speakers fetch streams from.
-func (b *Bridge) Handler() http.Handler { return b.proxy }
+// Handler serves the streams for the speakers plus GET /status.
+func (b *Bridge) Handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /status", b.serveStatus)
+	mux.Handle("/", b.proxy)
+	return mux
+}
+
+// Addr is the address Run listens on, or "" before it has started.
+func (b *Bridge) Addr() string {
+	a, _ := b.addr.Load().(string)
+	return a
+}
+
+// Status lists the managed speakers, sorted by name.
+func (b *Bridge) Status() []Status {
+	b.mu.Lock()
+	out := make([]Status, 0, len(b.boxes))
+	for _, bx := range b.boxes {
+		out = append(out, bx.status())
+	}
+	b.mu.Unlock()
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+func (b *Bridge) serveStatus(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(map[string]any{"version": b.Version, "boxen": b.Status(), "aktiveStreams": b.proxy.Active()})
+}
+
+// Ports of a speaker's services. IP, if set, is dialled instead of the
+// host name (tests use names like "fake-a" for simulated speakers).
+type Ports struct {
+	IP            string
+	API, WS, UPnP int
+}
+
+// DefaultPorts are the ports every SoundTouch speaker uses.
+var DefaultPorts = Ports{API: 8090, WS: 8080, UPnP: 8091}
+
+func (b *Bridge) ports(host string) Ports {
+	p := DefaultPorts
+	if b.PortsFor != nil {
+		p = b.PortsFor(host)
+	}
+	if p.IP == "" {
+		p.IP = host
+	}
+	return p
+}
+
+// url builds a URL for one service of the speaker at host.
+func (b *Bridge) url(scheme, host string, port func(Ports) int) string {
+	p := b.ports(host)
+	return fmt.Sprintf("%s://%s", scheme, net.JoinHostPort(p.IP, fmt.Sprint(port(p))))
+}
+
+// api returns a Web API client for the speaker at host.
+func (b *Bridge) api(host string) *speaker.Client {
+	c := speaker.New(host)
+	c.Base = b.url("http", host, func(p Ports) int { return p.API })
+	if b.APITimeout > 0 {
+		c.HTTP.Timeout = b.APITimeout
+	}
+	return c
+}
 
 // Run serves until ctx is cancelled. It only fails if the HTTP port cannot be opened.
 func (b *Bridge) Run(ctx context.Context) error {
@@ -68,13 +147,25 @@ func (b *Bridge) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("Port %s lässt sich nicht öffnen (läuft strb schon?): %w", cfg.Listen, err)
 	}
-	srv := &http.Server{Handler: b.proxy, ReadHeaderTimeout: 10 * time.Second}
+	b.addr.Store(ln.Addr().String())
+	srv := &http.Server{
+		Handler:           b.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		// Streams never end on their own: tie every request to ctx so
+		// stopping strb also closes the connections to the stations.
+		BaseContext: func(net.Listener) context.Context { return ctx },
+	}
+	stopped := make(chan struct{})
 	go func() {
+		defer close(stopped)
 		<-ctx.Done()
-		sctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		sctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		_ = srv.Shutdown(sctx)
+		if srv.Shutdown(sctx) != nil {
+			_ = srv.Close()
+		}
 	}()
+	defer func() { <-stopped }()
 	go func() {
 		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			b.Log.Error("HTTP-Server beendet", "fehler", err)
@@ -168,16 +259,25 @@ func (b *Bridge) discover(ctx context.Context) {
 		id := f.Info.DeviceID
 		if !cfg.Manages(id) {
 			gctx, cancel := context.WithTimeout(ctx, 4*time.Second)
-			g, err := speaker.New(f.Host).Group(gctx)
+			g, err := b.api(f.Host).Group(gctx)
 			cancel()
 			if err == nil && g.Paired() && g.MasterID != id && cfg.Manages(g.MasterID) {
 				b.noteOther(id, fmt.Sprintf("%s (%s) spielt im Stereo-Paar mit, gesteuert über die Master-Box", f.Info.Name, f.Host))
 			} else {
-				b.noteOther(id, fmt.Sprintf("%s (%s, %s) wird nicht gesteuert, weil sie nicht unter speakers: steht", f.Info.Name, f.Info.Type, f.Host))
+				b.noteOther(id, fmt.Sprintf("%s (%s) wird nicht gesteuert, weil sie nicht unter speakers: steht", f.Info.Name, f.Host))
 			}
 			continue
 		}
 		b.ensureBox(ctx, id, f.Host, f.Info.Name)
+	}
+	b.mu.Lock()
+	boxes := make([]*box, 0, len(b.boxes))
+	for _, bx := range b.boxes {
+		boxes = append(boxes, bx)
+	}
+	b.mu.Unlock()
+	for _, bx := range boxes {
+		bx.checkPublicURL()
 	}
 }
 
@@ -248,12 +348,16 @@ func (b *Bridge) publicURL(speakerHost string) (string, error) {
 	if cfg.PublicURL != "" {
 		return cfg.PublicURL, nil
 	}
-	ip, err := discovery.LocalIPFor(speakerHost)
+	ip, err := discovery.LocalIPFor(b.ports(speakerHost).IP)
 	if err != nil {
 		return "", err
 	}
-	_, port, err := net.SplitHostPort(cfg.Listen)
-	if err != nil || port == "" {
+	listen := cfg.Listen
+	if a := b.Addr(); a != "" {
+		listen = a // the real port, also when listen was ":0"
+	}
+	_, port, err := net.SplitHostPort(listen)
+	if err != nil || port == "" || port == "0" {
 		port = "8686"
 	}
 	return "http://" + net.JoinHostPort(ip, port), nil

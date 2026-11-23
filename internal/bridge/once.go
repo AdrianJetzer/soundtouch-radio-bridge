@@ -89,7 +89,7 @@ func (b *Bridge) PlayOnce(ctx context.Context, host, deviceID string, slot int, 
 	if err != nil {
 		return fmt.Errorf("Port %s belegt – läuft `strb run` schon? Dann einfach die Taste drücken: %w", cfg.Listen, err)
 	}
-	srv := &http.Server{Handler: b.proxy, ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Handler: b.Handler(), ReadHeaderTimeout: 10 * time.Second, BaseContext: func(net.Listener) context.Context { return ctx }}
 	go srv.Serve(ln)
 	defer srv.Close()
 

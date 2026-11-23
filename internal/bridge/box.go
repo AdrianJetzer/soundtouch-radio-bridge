@@ -31,6 +31,10 @@ type box struct {
 	failures int    // consecutive failed connects
 	player   *upnp.Player
 
+	connected  bool
+	lastPublic string // public URL used by the last successful sync (Z9)
+	lastPress  pressState
+
 	presses  chan int      // latest press wins (buffer 1)
 	sync     chan struct{} // sync request (buffer 1)
 	debounce events.Debouncer
@@ -87,6 +91,7 @@ func (x *box) upnpPlayer() *upnp.Player {
 	defer x.mu.Unlock()
 	if x.player == nil {
 		x.player = upnp.New(x.host, x.id)
+		x.player.Base = x.b.url("http", x.host, func(p Ports) int { return p.UPnP })
 	}
 	return x.player
 }
@@ -122,9 +127,14 @@ func (x *box) loop(ctx context.Context) {
 	defer cancel()
 
 	l := &events.Listener{
-		URL:       func() string { return fmt.Sprintf("ws://%s:%d", x.getHost(), events.Port) },
+		URL: func() string {
+			return x.b.url("ws", x.getHost(), func(p Ports) int { return p.WS })
+		},
 		OnMessage: x.onMessage,
 		OnState:   x.onState,
+	}
+	if x.b.TuneListener != nil {
+		x.b.TuneListener(l)
 	}
 	go l.Run(ctx)
 	go x.playWorker(ctx)
@@ -145,6 +155,7 @@ func (x *box) loop(ctx context.Context) {
 func (x *box) onState(up bool, err error) {
 	x.mu.Lock()
 	wasFailing := x.failures
+	x.connected = up
 	if up {
 		x.failures = 0
 	} else {
@@ -257,6 +268,12 @@ func (x *box) play(ctx context.Context, slot int) {
 		}
 	}
 	ms := time.Since(start).Milliseconds()
+	x.mu.Lock()
+	x.lastPress = pressState{Slot: slot, Station: st.Name, At: start, OK: err == nil}
+	if err != nil {
+		x.lastPress.Error = err.Error()
+	}
+	x.mu.Unlock()
 	switch {
 	case ctx.Err() != nil && err != nil:
 		log.Debug(fmt.Sprintf("Taste %d → %s abgebrochen (neuer Tastendruck)", slot, st.Name))
@@ -280,7 +297,7 @@ func guessMIME(u string) string {
 func (x *box) refreshName() {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
-	if info, err := speaker.New(x.getHost()).Info(ctx); err == nil && info.Name != "" {
+	if info, err := x.b.api(x.getHost()).Info(ctx); err == nil && info.Name != "" {
 		x.setName(info.Name)
 	}
 }
@@ -289,7 +306,7 @@ func (x *box) refreshName() {
 func (x *box) checkGroup() {
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
-	g, err := speaker.New(x.getHost()).Group(ctx)
+	g, err := x.b.api(x.getHost()).Group(ctx)
 	if err != nil {
 		x.log().Debug("Paar-Status nicht lesbar", "fehler", err)
 		return
@@ -351,7 +368,7 @@ func (x *box) syncPresets(ctx context.Context) {
 		log.Warn("Presets nicht abgeglichen: eigene Adresse unbekannt", "fehler", err)
 		return
 	}
-	sp := speaker.New(host)
+	sp := x.b.api(host)
 	current, raw, err := sp.Presets(ctx)
 	if err != nil {
 		log.Debug("Presets nicht lesbar", "fehler", err)
@@ -374,6 +391,7 @@ func (x *box) syncPresets(ctx context.Context) {
 		}
 	}
 	if len(todo) == 0 {
+		x.setLastPublic(public)
 		return
 	}
 
@@ -400,7 +418,67 @@ func (x *box) syncPresets(ctx context.Context) {
 	}
 	if len(failed) > 0 {
 		log.Warn("Presets nicht gespeichert, neuer Versuch beim nächsten Abgleich: " + strings.Join(failed, ", "))
+		return
 	}
+	x.setLastPublic(public)
+}
+
+func (x *box) setLastPublic(p string) {
+	x.mu.Lock()
+	x.lastPublic = p
+	x.mu.Unlock()
+}
+
+// checkPublicURL requests a sync when our own address changed (Z9), e.g.
+// because the computer got a new IP from the router.
+func (x *box) checkPublicURL() {
+	host := x.getHost()
+	if host == "" {
+		return
+	}
+	public, err := x.b.publicURL(host)
+	x.mu.Lock()
+	changed := err == nil && x.lastPublic != "" && x.lastPublic != public
+	old := x.lastPublic
+	x.mu.Unlock()
+	if changed {
+		x.log().Info("eigene Adresse hat sich geändert, Presets werden neu geschrieben", "alt", old, "neu", public)
+		x.requestSync()
+	}
+}
+
+// pressState is the last button press, for /status.
+type pressState struct {
+	Slot    int       `json:"taste"`
+	Station string    `json:"sender"`
+	At      time.Time `json:"zeit"`
+	OK      bool      `json:"ok"`
+	Error   string    `json:"fehler,omitempty"`
+}
+
+// Status is the state of one speaker, for /status.
+type Status struct {
+	DeviceID  string      `json:"deviceID"`
+	Name      string      `json:"name"`
+	Host      string      `json:"adresse"`
+	Connected bool        `json:"verbunden"`
+	Group     string      `json:"stereoPaar,omitempty"`
+	SecondBox bool        `json:"zweiteBoxImPaar,omitempty"`
+	PublicURL string      `json:"eigeneAdresse,omitempty"`
+	LastPress *pressState `json:"letzterTastendruck,omitempty"`
+	Failures  int         `json:"fehlversuche"`
+}
+
+func (x *box) status() Status {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	s := Status{DeviceID: x.id, Name: x.name, Host: x.host, Connected: x.connected, Group: x.group,
+		SecondBox: x.slaveOf != "", PublicURL: x.lastPublic, Failures: x.failures}
+	if x.lastPress.Slot != 0 {
+		lp := x.lastPress
+		s.LastPress = &lp
+	}
+	return s
 }
 
 func samePreset(a, b speaker.ContentItem) bool {
