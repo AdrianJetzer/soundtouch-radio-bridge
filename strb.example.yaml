@@ -1,0 +1,21 @@
+# Beispiel-Konfiguration für strb (SoundTouch Radio Bridge).
+# Kopieren nach strb.yaml und anpassen. Änderungen werden im laufenden Betrieb übernommen.
+
+listen: ":8686"
+public_url: ""            # leer = automatisch, z.B. "http://192.168.1.10:8686"
+
+stations:
+  regenbogen:  { name: "Radio Regenbogen Soft & Lazy", url: "https://stream.regenbogen.de/softlazy/mp3-128/radiobrowser" }
+  loungefm:    { name: "Lounge FM",            url: "https://cast.mediaonline.net.ua/loungefm320" }
+  swissgroove: { name: "SwissGroove",          url: "http://relay1.swissgroove.ch/stream" }
+  chillout:    { name: "1.FM Chillout Lounge", url: "http://strm112.1.fm/chilloutlounge_mobile_mp3" }
+  jazzcafe:    { name: "Jazz Cafe",            url: "http://radio.wanderingsheep.tv:8000/jazzcafe" }
+  swr3:        { name: "SWR3",                 url: "https://liveradio.swr.de/sw282p3/swr3/play.mp3" }
+
+# Preset-Tasten 1–6
+presets: [regenbogen, loungefm, swissgroove, chillout, jazzcafe, swr3]
+
+# Welche Boxen angefasst werden. `strb discover` zeigt deviceID und IP.
+speakers:
+  - id: AABBCCDDEEFF
+    host: 192.168.1.50

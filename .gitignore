@@ -1,0 +1,15 @@
+# Lokale Konfiguration mit Geräte-IDs/IPs – nicht ins Repo
+strb.yaml
+backups/
+captures/
+
+# Build-Artefakte
+/bin/
+/dist/
+*.exe
+
+# OS / Editor
+.DS_Store
+.idea/
+.vscode/
+.claude/settings.local.json
